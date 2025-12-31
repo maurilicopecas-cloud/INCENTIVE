@@ -67,12 +67,12 @@ def get_seller_items(seller_id: int):
 
     # 1️⃣ Busca anúncios do seller
     search_response = requests.get(
-        "https://api.mercadolibre.com/sites/MLB/search",
-        params={"seller_id": seller_id, "limit": 50},
-        headers={
-            "Authorization": f"Bearer {token}"
-        },
-        timeout=10
+    "https://api.mercadolibre.com/sites/MLB/search",
+    params={
+        "seller_id": seller_id,
+        "limit": 50
+    },
+    timeout=10
     )
 
     if search_response.status_code != 200:
