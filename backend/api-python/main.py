@@ -1,3 +1,9 @@
+from database import engine
+from models import ml_token, ml_user, ml_item
+from database import Base
+
+Base.metadata.create_all(bind=engine)
+
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 import requests
