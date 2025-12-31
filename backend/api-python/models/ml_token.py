@@ -7,11 +7,14 @@ class MLToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    user_id = Column(String, index=True)  # Mercado Livre user_id
-    access_token = Column(String)
-    refresh_token = Column(String)
+    user_id = Column(String, index=True)
+
+    access_token = Column(String, nullable=False)
+    refresh_token = Column(String, nullable=False)
 
     expires_in = Column(Integer)
+    expires_at = Column(DateTime(timezone=True))  # 👈 essencial
+
     scope = Column(String)
     token_type = Column(String)
 

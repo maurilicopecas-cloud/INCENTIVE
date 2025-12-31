@@ -1,15 +1,9 @@
-from database import engine
-from models import ml_token, ml_user, ml_item
-from database import Base
-
-Base.metadata.create_all(bind=engine)
-
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 import requests
 
-from database import engine, SessionLocal
-from models import Base, MercadoLivreToken
+from database import engine, SessionLocal, Base
+from models import ml_token, ml_user, ml_item
 from ml import get_app_token
 
 # ======================================================
@@ -19,7 +13,7 @@ from ml import get_app_token
 app = FastAPI(title="Incentive API")
 
 # ======================================================
-# BANCO – cria tabelas automaticamente no deploy
+# BANCO – cria tabelas automaticamente
 # ======================================================
 
 Base.metadata.create_all(bind=engine)
@@ -49,13 +43,6 @@ def health():
 
 @app.get("/ml/sites")
 def get_sites(db: Session = Depends(get_db)):
-    """
-    Endpoint de teste para validar:
-    - token
-    - autenticação
-    - conexão com ML
-    """
-
     token = get_app_token(db)
 
     response = requests.get(
