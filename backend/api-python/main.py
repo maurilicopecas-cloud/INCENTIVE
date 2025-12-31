@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 import requests
 
 from database import engine, SessionLocal, Base
-from models import ml_token, ml_user, ml_item
+from models.ml_token import MLToken
 from ml import get_app_token
 
 # ======================================================
@@ -43,7 +43,7 @@ def health():
 
 @app.get("/ml/sites")
 def get_sites(db: Session = Depends(get_db)):
-    token = get_app_token(db)
+    token = get_app_token()
 
     response = requests.get(
         "https://api.mercadolibre.com/sites/MLB",
