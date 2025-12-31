@@ -30,8 +30,7 @@ def get_db():
         db.close()
 
 # ======================================================
-# HEADERS PADRÃO PARA ENDPOINTS PÚBLICOS DO MERCADO LIVRE
-# (ESSENCIAL PARA EVITAR 403)
+# HEADERS PADRÃO
 # ======================================================
 
 HEADERS_PUBLIC = {
@@ -59,7 +58,8 @@ def get_sites(db: Session = Depends(get_db)):
         "https://api.mercadolibre.com/sites/MLB",
         headers={
             "Authorization": f"Bearer {token}",
-            "User-Agent": HEADERS_PUBLIC["User-Agent"]
+            "User-Agent": HEADERS_PUBLIC["User-Agent"],
+            "Accept": "application/json"
         },
         timeout=10
     )
@@ -74,20 +74,22 @@ def get_sites(db: Session = Depends(get_db)):
 
 # ======================================================
 # SELLER → TÍTULO, PREÇO E TODAS AS IMAGENS
-# (ENDPOINTS PÚBLICOS – SEM TOKEN)
+# ENDPOINT OFICIAL DO MERCADO LIVRE (EXIGE TOKEN)
 # ======================================================
 
 @app.get("/ml/seller/{seller_id}")
 def get_seller_items(seller_id: int):
 
-    # 1️⃣ Busca anúncios do seller
+    token = get_app_token()
+
+    # 1️⃣ Busca anúncios do seller (ENDPOINT CORRETO)
     search_response = requests.get(
-        "https://api.mercadolibre.com/sites/MLB/search",
-        params={
-            "seller_id": seller_id,
-            "limit": 50
+        f"https://api.mercadolibre.com/users/{seller_id}/items/search",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "User-Agent": HEADERS_PUBLIC["User-Agent"],
+            "Accept": "application/json"
         },
-        headers=HEADERS_PUBLIC,
         timeout=10
     )
 
@@ -100,9 +102,8 @@ def get_seller_items(seller_id: int):
     search_data = search_response.json()
     items = []
 
-    # 2️⃣ Para cada item, busca detalhes (imagens completas)
-    for item in search_data.get("results", []):
-        item_id = item.get("id")
+    # Esse endpoint retorna apenas IDs
+    for item_id in search_data.get("results", []):
 
         item_response = requests.get(
             f"https://api.mercadolibre.com/items/{item_id}",
