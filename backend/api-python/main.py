@@ -1,18 +1,56 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
 import requests
+
+from database import engine, SessionLocal
+from models import Base, MercadoLivreToken
 from ml import get_app_token
 
-app = FastAPI()
+# ======================================================
+# APP
+# ======================================================
 
+app = FastAPI(title="Incentive API")
+
+# ======================================================
+# BANCO – cria tabelas automaticamente no deploy
+# ======================================================
+
+Base.metadata.create_all(bind=engine)
+
+# ======================================================
+# DEPENDÊNCIA DE SESSÃO DO BANCO
+# ======================================================
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ======================================================
+# HEALTH CHECK
+# ======================================================
 
 @app.get("/")
 def health():
     return {"status": "ok"}
 
+# ======================================================
+# TESTE MERCADO LIVRE (SITE)
+# ======================================================
 
 @app.get("/ml/sites")
-def get_sites():
-    token = get_app_token()
+def get_sites(db: Session = Depends(get_db)):
+    """
+    Endpoint de teste para validar:
+    - token
+    - autenticação
+    - conexão com ML
+    """
+
+    token = get_app_token(db)
 
     response = requests.get(
         "https://api.mercadolibre.com/sites/MLB",
@@ -22,5 +60,10 @@ def get_sites():
         timeout=10
     )
 
-    response.raise_for_status()
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text
+        )
+
     return response.json()
