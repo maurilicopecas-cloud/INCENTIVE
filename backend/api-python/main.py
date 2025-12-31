@@ -60,3 +60,61 @@ def get_sites(db: Session = Depends(get_db)):
         )
 
     return response.json()
+
+@app.get("/ml/seller/{seller_id}")
+def get_seller_items(seller_id: int):
+    token = get_app_token()
+
+    # 1️⃣ Busca anúncios do seller
+    search_response = requests.get(
+        "https://api.mercadolibre.com/sites/MLB/search",
+        params={"seller_id": seller_id, "limit": 50},
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+        timeout=10
+    )
+
+    if search_response.status_code != 200:
+        raise HTTPException(
+            status_code=search_response.status_code,
+            detail=search_response.text
+        )
+
+    search_data = search_response.json()
+    items = []
+
+    # 2️⃣ Para cada item, buscar detalhes (imagens completas)
+    for item in search_data.get("results", []):
+        item_id = item.get("id")
+
+        item_response = requests.get(
+            f"https://api.mercadolibre.com/items/{item_id}",
+            headers={
+                "Authorization": f"Bearer {token}"
+            },
+            timeout=10
+        )
+
+        if item_response.status_code != 200:
+            continue
+
+        item_data = item_response.json()
+
+        images = [
+            picture.get("secure_url")
+            for picture in item_data.get("pictures", [])
+        ]
+
+        items.append({
+            "item_id": item_id,
+            "title": item_data.get("title"),
+            "price": item_data.get("price"),
+            "images": images
+        })
+
+    return {
+        "seller_id": seller_id,
+        "total_items": len(items),
+        "items": items
+    }
