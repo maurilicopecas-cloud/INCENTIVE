@@ -1,33 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import FastAPI, HTTPException
 import requests
 
-from database import engine, SessionLocal, Base
-from models import ml_token, ml_user, ml_item
 from ml import get_app_token
 
-# ======================================================
-# APP
-# ======================================================
-
 app = FastAPI(title="Incentive API")
-
-# ======================================================
-# BANCO – cria tabelas automaticamente
-# ======================================================
-
-Base.metadata.create_all(bind=engine)
-
-# ======================================================
-# DEPENDÊNCIA DE SESSÃO DO BANCO
-# ======================================================
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # ======================================================
 # HEALTH CHECK
@@ -38,12 +14,25 @@ def health():
     return {"status": "ok"}
 
 # ======================================================
-# TESTE MERCADO LIVRE (SITE)
+# TESTE REAL API MERCADO LIVRE
 # ======================================================
 
-@app.get("/ml/sites")
-def get_sites(db: Session = Depends(get_db)):
-    token = get_app_token(db)
+@app.get("/ml/test/site")
+def test_ml_site():
+    """
+    Testa:
+    - geração de token
+    - autenticação
+    - chamada real à API do Mercado Livre
+    """
+
+    try:
+        token = get_app_token()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao gerar token ML: {str(e)}"
+        )
 
     response = requests.get(
         "https://api.mercadolibre.com/sites/MLB",
@@ -59,4 +48,7 @@ def get_sites(db: Session = Depends(get_db)):
             detail=response.text
         )
 
-    return response.json()
+    return {
+        "message": "API Mercado Livre OK",
+        "data": response.json()
+    }

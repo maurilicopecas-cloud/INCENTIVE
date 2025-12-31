@@ -14,10 +14,6 @@ _token_cache = {
 
 
 def get_app_token() -> str:
-    """
-    Gera token de aplicação (client_credentials)
-    com cache automático
-    """
     now = time.time()
 
     if _token_cache["access_token"] and now < _token_cache["expires_at"]:
