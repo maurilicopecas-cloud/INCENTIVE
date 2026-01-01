@@ -1,115 +1,98 @@
-from fastapi import FastAPI, HTTPException, Query
 import os
-import requests
 import secrets
-import hashlib
-import base64
+import requests
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 
-app = FastAPI(title="Incentive API")
+app = FastAPI(title="Incentive API - ML OAuth")
 
-# ======================================================
-# CONFIGURAÇÕES (via Environment Variables no Render)
-# ======================================================
+# ======== CONFIGURAÇÃO DA APP ========
+ML_CLIENT_ID = os.environ.get("ML_CLIENT_ID")
+ML_CLIENT_SECRET = os.environ.get("ML_CLIENT_SECRET")
+ML_REDIRECT_URI = os.environ.get("ML_REDIRECT_URI")  # ex: https://incentive-api-uuug.onrender.com/ml/callback
 
-ML_CLIENT_ID = os.getenv("ML_CLIENT_ID")
-ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET")
-ML_REDIRECT_URI = os.getenv(
-    "ML_REDIRECT_URI",
-    "https://testevaidarcerto.com.br/redirect"
-)
+if not ML_CLIENT_ID or not ML_CLIENT_SECRET or not ML_REDIRECT_URI:
+    raise Exception("Você precisa setar ML_CLIENT_ID, ML_CLIENT_SECRET e ML_REDIRECT_URI nas variáveis de ambiente")
 
-# ======================================================
-# PKCE + STATE (memória simples – depois vira banco)
-# ======================================================
-
-OAUTH_MEMORY = {}
-
-def generate_code_verifier():
-    return secrets.token_urlsafe(64)
-
-def generate_code_challenge(code_verifier: str):
-    digest = hashlib.sha256(code_verifier.encode()).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-
-# ======================================================
-# HEALTH CHECK
-# ======================================================
+# ======== STORE STATE TEMP (em memória por enquanto) ========
+# Em produção salve em DB ou cache
+STATE_STORE = {}
 
 @app.get("/")
 def health():
-    return {"status": "ok"}
+    return {"status": "incentive-api ok"}
 
-# ======================================================
-# 1️⃣ INICIAR AUTH (gera URL Mercado Livre)
-# ======================================================
-
+# ======== GERAR AUTORIZAÇÃO URL ========
 @app.get("/ml/auth")
 def ml_auth():
-
-    state = secrets.token_urlsafe(32)
-    code_verifier = generate_code_verifier()
-    code_challenge = generate_code_challenge(code_verifier)
-
-    # salva tudo em memória
-    OAUTH_MEMORY[state] = {
-        "code_verifier": code_verifier
-    }
+    # gera state único
+    state = secrets.token_urlsafe(16)
+    STATE_STORE[state] = True
 
     auth_url = (
         "https://auth.mercadolivre.com.br/authorization"
         f"?response_type=code"
         f"&client_id={ML_CLIENT_ID}"
         f"&redirect_uri={ML_REDIRECT_URI}"
-        f"&code_challenge={code_challenge}"
-        f"&code_challenge_method=S256"
         f"&state={state}"
     )
 
     return {"auth_url": auth_url}
 
-# ======================================================
-# 2️⃣ CALLBACK (troca CODE por TOKEN)
-# ======================================================
-
+# ======== CALLBACK ========
 @app.get("/ml/callback")
-def ml_callback(
-    code: str = Query(...),
-    state: str = Query(...)
-):
-
-    if state not in OAUTH_MEMORY:
+def ml_callback(code: str = None, state: str = None):
+    # valida state
+    if not state or state not in STATE_STORE:
         raise HTTPException(status_code=400, detail="Invalid state")
 
-    code_verifier = OAUTH_MEMORY[state]["code_verifier"]
+    # remove state para segurança
+    STATE_STORE.pop(state, None)
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing code")
+
+    # trocando code por access_token
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": ML_CLIENT_ID,
+        "client_secret": ML_CLIENT_SECRET,
+        "code": code,
+        "redirect_uri": ML_REDIRECT_URI
+    }
+
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded"
+    }
 
     token_response = requests.post(
         "https://api.mercadolibre.com/oauth/token",
-        data={
-            "grant_type": "authorization_code",
-            "client_id": ML_CLIENT_ID,
-            "client_secret": ML_CLIENT_SECRET,
-            "code": code,
-            "redirect_uri": ML_REDIRECT_URI,
-            "code_verifier": code_verifier
-        },
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
-        timeout=10
+        data=data,
+        headers=headers
     )
 
     if token_response.status_code != 200:
-        raise HTTPException(
-            status_code=token_response.status_code,
-            detail=token_response.text
-        )
+        raise HTTPException(status_code=token_response.status_code, detail=token_response.text)
 
     token_data = token_response.json()
 
-    return {
-        "message": "OAuth concluído com sucesso",
-        "access_token": token_data.get("access_token"),
-        "refresh_token": token_data.get("refresh_token"),
-        "user_id": token_data.get("user_id"),
-        "expires_in": token_data.get("expires_in")
-    }
+    # Opcional: salvar token_data no seu DB
+    # Exemplo:
+    # user_id = token_data.get("user_id")
+    # salva token_data em tabela de tokens
+
+    return token_data
+
+# ======== EXEMPLO DE USO COM ACCESS TOKEN ========
+@app.get("/ml/me")
+def ml_me(access_token: str):
+    # faz chamada com access_token
+    response = requests.get(
+        "https://api.mercadolibre.com/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10
+    )
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    return response.json()
