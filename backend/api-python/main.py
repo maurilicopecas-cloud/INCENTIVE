@@ -1,34 +1,34 @@
-from fastapi import FastAPI, HTTPException
-import os
-import secrets
-import hashlib
-import base64
+from fastapi import FastAPI, HTTPException, Query
 import requests
+import secrets
+import base64
+import hashlib
+import os
 
 app = FastAPI(title="Incentive API")
 
-# ===============================
-# CONFIG (Render Environment)
-# ===============================
+# =========================
+# CONFIGURAÇÕES
+# =========================
 
-ML_CLIENT_ID = os.getenv("ML_CLIENT_ID")
+ML_CLIENT_ID = "2290751302100143"
 ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET")
-ML_REDIRECT_URI = "https://testevaidarcerto.com.br/redirect"
+REDIRECT_URI = "https://testevaidarcerto.com.br/redirect"
 
-# memória simples (depois vira banco)
-PKCE_STORE = {}
+# Em produção isso deveria ir para banco ou cache
+OAUTH_TEMP_STORAGE = {}
 
-# ===============================
+# =========================
 # HEALTH
-# ===============================
+# =========================
 
 @app.get("/")
 def health():
     return {"status": "ok"}
 
-# ===============================
-# STEP 1 – GERAR AUTH URL (PKCE)
-# ===============================
+# =========================
+# PASSO 1 — GERAR AUTH URL
+# =========================
 
 @app.get("/ml/auth")
 def ml_auth():
@@ -37,17 +37,20 @@ def ml_auth():
 
     code_challenge = base64.urlsafe_b64encode(
         hashlib.sha256(code_verifier.encode()).digest()
-    ).decode().replace("=", "")
+    ).rstrip(b"=").decode("utf-8")
 
-    state = secrets.token_urlsafe(16)
+    state = secrets.token_urlsafe(32)
 
-    PKCE_STORE[state] = code_verifier
+    # guardar temporariamente
+    OAUTH_TEMP_STORAGE[state] = {
+        "code_verifier": code_verifier
+    }
 
     auth_url = (
         "https://auth.mercadolivre.com.br/authorization"
         f"?response_type=code"
         f"&client_id={ML_CLIENT_ID}"
-        f"&redirect_uri={ML_REDIRECT_URI}"
+        f"&redirect_uri={REDIRECT_URI}"
         f"&code_challenge={code_challenge}"
         f"&code_challenge_method=S256"
         f"&state={state}"
@@ -57,36 +60,41 @@ def ml_auth():
         "auth_url": auth_url
     }
 
-# ===============================
-# STEP 2 – CALLBACK (TOKEN)
-# ===============================
+# =========================
+# PASSO 2 — CALLBACK
+# =========================
 
 @app.get("/ml/callback")
-def ml_callback(code: str, state: str):
+def ml_callback(
+    code: str = Query(...),
+    state: str = Query(...)
+):
 
-    code_verifier = PKCE_STORE.get(state)
-
-    if not code_verifier:
+    if state not in OAUTH_TEMP_STORAGE:
         raise HTTPException(status_code=400, detail="Invalid state")
 
-    response = requests.post(
+    code_verifier = OAUTH_TEMP_STORAGE[state]["code_verifier"]
+
+    token_response = requests.post(
         "https://api.mercadolibre.com/oauth/token",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
         data={
             "grant_type": "authorization_code",
             "client_id": ML_CLIENT_ID,
             "client_secret": ML_CLIENT_SECRET,
             "code": code,
-            "redirect_uri": ML_REDIRECT_URI,
+            "redirect_uri": REDIRECT_URI,
             "code_verifier": code_verifier
         },
         timeout=10
     )
 
-    if response.status_code != 200:
+    if token_response.status_code != 200:
         raise HTTPException(
-            status_code=response.status_code,
-            detail=response.text
+            status_code=token_response.status_code,
+            detail=token_response.text
         )
 
-    return response.json()
+    return token_response.json()
