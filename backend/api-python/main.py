@@ -94,22 +94,20 @@ def ml_callback(code: str = None, state: str = None):
     return response.json()
 
 
-@app.get("/ml/seller/{seller_id}")
-def listar_anuncios_seller(seller_id: int):
+@app.get("/ml/my-items")
+def listar_meus_anuncios():
     access_token = "APP_USR-2290751302100143-010117-d64eb251ab8022b72c6f546ef681b088-689467087"
-
-    url = "https://api.mercadolibre.com/sites/MLB/search"
 
     headers = {
         "Authorization": f"Bearer {access_token}"
     }
 
-    params = {
-        "seller_id": seller_id,
-        "limit": 20
-    }
+    # USER ID DONO DO TOKEN
+    user_id = 689467087
 
-    response = requests.get(url, headers=headers, params=params)
+    url = f"https://api.mercadolibre.com/users/{user_id}/items/search"
+
+    response = requests.get(url, headers=headers, timeout=15)
 
     if response.status_code != 200:
         raise HTTPException(
@@ -119,20 +117,29 @@ def listar_anuncios_seller(seller_id: int):
 
     data = response.json()
 
-    anuncios = []
+    items = []
 
-    for item in data.get("results", []):
-        anuncios.append({
+    for item_id in data.get("results", []):
+        item_resp = requests.get(
+            f"https://api.mercadolibre.com/items/{item_id}",
+            headers=headers,
+            timeout=10
+        )
+
+        if item_resp.status_code != 200:
+            continue
+
+        item = item_resp.json()
+
+        items.append({
             "id": item.get("id"),
             "title": item.get("title"),
             "price": item.get("price"),
-            "thumbnail": item.get("thumbnail"),
-            "permalink": item.get("permalink")
+            "permalink": item.get("permalink"),
+            "images": [p["secure_url"] for p in item.get("pictures", [])]
         })
 
     return {
-        "seller_id": seller_id,
-        "total": len(anuncios),
-        "anuncios": anuncios
+        "total": len(items),
+        "items": items
     }
-
