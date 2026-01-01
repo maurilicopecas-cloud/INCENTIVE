@@ -92,3 +92,47 @@ def ml_callback(code: str = None, state: str = None):
         raise HTTPException(status_code=response.status_code, detail=response.text)
 
     return response.json()
+
+
+@app.get("/ml/seller/{seller_id}")
+def listar_anuncios_seller(seller_id: int):
+    access_token = "APP_USR-2290751302100143-010117-d64eb251ab8022b72c6f546ef681b088-689467087"
+
+    url = "https://api.mercadolibre.com/sites/MLB/search"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    params = {
+        "seller_id": seller_id,
+        "limit": 20
+    }
+
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text
+        )
+
+    data = response.json()
+
+    anuncios = []
+
+    for item in data.get("results", []):
+        anuncios.append({
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "price": item.get("price"),
+            "thumbnail": item.get("thumbnail"),
+            "permalink": item.get("permalink")
+        })
+
+    return {
+        "seller_id": seller_id,
+        "total": len(anuncios),
+        "anuncios": anuncios
+    }
+
