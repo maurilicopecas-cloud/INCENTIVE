@@ -1,103 +1,80 @@
 from fastapi import FastAPI, HTTPException
 import requests
 import os
-from urllib.parse import urlencode
 
-app = FastAPI(title="Incentive API - Mercado Livre")
+app = FastAPI(title="Incentive API")
 
-# ======================================================
-# CONFIG
-# ======================================================
+# ==========================
+# CONFIGURAÇÕES
+# ==========================
 
-ML_CLIENT_ID = os.getenv("ML_CLIENT_ID")
-ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET")
-ML_REDIRECT_URI = os.getenv("ML_REDIRECT_URI")
+CLIENT_ID = os.getenv("ML_CLIENT_ID")
+CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET")
+REDIRECT_URI = "https://testevaidarcerto.com.br/redirect"
 
 ML_AUTH_URL = "https://auth.mercadolivre.com.br/authorization"
 ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
 
-# armazenamento simples (depois vira banco)
-SELLER_TOKENS = {}
-
-# ======================================================
-# HEALTH
-# ======================================================
+# ==========================
+# HEALTH CHECK
+# ==========================
 
 @app.get("/")
 def health():
     return {"status": "ok"}
 
-# ======================================================
-# 1️⃣ LOGIN OAUTH
-# ======================================================
+# ==========================
+# 1️⃣ INICIAR OAUTH
+# ==========================
 
-@app.get("/ml/oauth/login")
-def ml_oauth_login():
-    params = {
-        "response_type": "code",
-        "client_id": ML_CLIENT_ID,
-        "redirect_uri": ML_REDIRECT_URI
-    }
-    url = f"{ML_AUTH_URL}?{urlencode(params)}"
-    return {"auth_url": url}
+@app.get("/ml/auth")
+def ml_auth():
+    auth_url = (
+        f"{ML_AUTH_URL}"
+        f"?response_type=code"
+        f"&client_id={CLIENT_ID}"
+        f"&redirect_uri={REDIRECT_URI}"
+    )
+    return {"auth_url": auth_url}
 
-# ======================================================
-# 2️⃣ CALLBACK
-# ======================================================
+# ==========================
+# 2️⃣ CALLBACK (REDIRECT)
+# ==========================
 
-@app.get("/ml/oauth/callback")
-def ml_oauth_callback(code: str):
-    payload = {
+@app.get("/ml/callback")
+def ml_callback(code: str):
+    data = {
         "grant_type": "authorization_code",
-        "client_id": ML_CLIENT_ID,
-        "client_secret": ML_CLIENT_SECRET,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
         "code": code,
-        "redirect_uri": ML_REDIRECT_URI
+        "redirect_uri": REDIRECT_URI,
     }
 
-    response = requests.post(ML_TOKEN_URL, data=payload, timeout=10)
+    response = requests.post(ML_TOKEN_URL, data=data, timeout=10)
 
     if response.status_code != 200:
         raise HTTPException(
-            status_code=500,
+            status_code=response.status_code,
             detail=response.text
         )
 
-    data = response.json()
+    return response.json()
 
-    seller_id = data["user_id"]
-    SELLER_TOKENS[seller_id] = data
-
-    return {
-        "message": "Seller autorizado com sucesso",
-        "seller_id": seller_id
-    }
-
-# ======================================================
-# 3️⃣ ITENS DO SELLER (COM TOKEN)
-# ======================================================
+# ==========================
+# 3️⃣ TESTE SELLER (COM TOKEN)
+# ==========================
 
 @app.get("/ml/seller/{seller_id}")
-def get_seller_items(seller_id: int):
-    token_data = SELLER_TOKENS.get(seller_id)
-
-    if not token_data:
-        raise HTTPException(
-            status_code=401,
-            detail="Seller não autorizado. Faça OAuth primeiro."
-        )
-
-    access_token = token_data["access_token"]
+def get_seller_items(seller_id: int, access_token: str):
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
 
     search = requests.get(
         "https://api.mercadolibre.com/sites/MLB/search",
-        headers={
-            "Authorization": f"Bearer {access_token}"
-        },
-        params={
-            "seller_id": seller_id,
-            "limit": 20
-        },
+        params={"seller_id": seller_id, "limit": 50},
+        headers=headers,
         timeout=10
     )
 
@@ -107,39 +84,33 @@ def get_seller_items(seller_id: int):
             detail=search.text
         )
 
-    results = search.json().get("results", [])
     items = []
 
-    for item in results:
+    for item in search.json().get("results", []):
         item_id = item["id"]
 
-        item_resp = requests.get(
+        item_detail = requests.get(
             f"https://api.mercadolibre.com/items/{item_id}",
-            headers={
-                "Authorization": f"Bearer {access_token}"
-            },
+            headers=headers,
             timeout=10
         )
 
-        if item_resp.status_code != 200:
+        if item_detail.status_code != 200:
             continue
 
-        item_data = item_resp.json()
+        data = item_detail.json()
 
-        images = [
-            pic.get("secure_url")
-            for pic in item_data.get("pictures", [])
-        ]
+        images = [p["secure_url"] for p in data.get("pictures", [])]
 
         items.append({
-            "item_id": item_id,
-            "title": item_data.get("title"),
-            "price": item_data.get("price"),
+            "id": item_id,
+            "title": data.get("title"),
+            "price": data.get("price"),
             "images": images
         })
 
     return {
         "seller_id": seller_id,
-        "total_items": len(items),
+        "total": len(items),
         "items": items
     }
